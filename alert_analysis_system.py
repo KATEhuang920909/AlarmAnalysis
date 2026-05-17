@@ -39,7 +39,7 @@ PRIORITY_LEVELS = {
 TIME_WINDOW_MINUTES = 10
 
 # 数据集路径
-DATASET_PATH = "run_table_2021-07.csv"
+DATASET_PATH = "run/run_table_2021-07.csv"
 # ============================================================================
 
 # 初始化Flask应用
