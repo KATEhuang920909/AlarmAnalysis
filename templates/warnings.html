@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>风险预警</title>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;font-family:system-ui;}
+        body {background:#f5f7fa;padding:20px;}
+        .container {max-width:1200px;margin:0 auto;}
+        .card {background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 8px #0001;}
+        .warn {margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #eee;}
+        .warn:last-child {border-bottom:none;}
+        .high {color:#dc2626;font-weight:600;}
+        .medium {color:#ea580c;font-weight:600;}
+        .low {color:#64748b;}
+        a {color:#0066cc;text-decoration:none;margin-right:16px;}
+        a:hover {text-decoration:underline;}
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>风险预警</h1>
+    <div style="margin:20px 0;">
+        <a href="/">首页</a>
+        <a href="/alerts">告警列表</a>
+        <a href="/faults">故障根因</a>
+        <a href="/warnings">风险预警</a>
+    </div>
+    <div class="card">
+        {% for w in warnings %}
+        <div class="warn">
+            <h3>服务：{{ w.service }}
+                <span class="{{ w.风险等级 | lower }}">{{ w.风险等级 }}风险</span>
+            </h3>
+            <p>预测时间：{{ w.预测故障时间 }}</p>
+            <p>风险类型：{{ w.风险类型 }}</p>
+            <p>预警依据：{{ w.预警依据 }}</p>
+            <p>预防措施：{{ w.预防措施 }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+</body>
+</html>

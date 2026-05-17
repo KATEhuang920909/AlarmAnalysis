@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>故障根因分析</title>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;font-family:system-ui;}
+        body {background:#f5f7fa;padding:20px;}
+        .container {max-width:1200px;margin:0 auto;}
+        .card {background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 8px #0001;}
+        .event {margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid #eee;}
+        .event:last-child {border-bottom:none;}
+        h3 {color:#222;margin-bottom:8px;}
+        p {color:#444;line-height:1.5;margin-bottom:8px;}
+        a {color:#0066cc;text-decoration:none;margin-right:16px;}
+        a:hover {text-decoration:underline;}
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>故障根因分析</h1>
+    <div style="margin:20px 0;">
+        <a href="/">首页</a>
+        <a href="/alerts">告警列表</a>
+        <a href="/faults">故障根因</a>
+        <a href="/warnings">风险预警</a>
+    </div>
+    <div class="card">
+        {% for e in events %}
+        <div class="event">
+            <h3>故障时间：{{ e.event_time }}（{{ e.alert_count }}条告警）</h3>
+            <p><strong>根因告警：</strong>{{ e.根因告警.message }}</p>
+            <p><strong>影响服务：</strong>{{ e.services | join(', ') }}</p>
+            <p><strong>根因分析：</strong>{{ e.根因分析 }}</p>
+            <p><strong>影响范围：</strong>{{ e.故障影响范围 }}</p>
+            <p><strong>修复建议：</strong>{{ e.修复建议 }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+</body>
+</html>

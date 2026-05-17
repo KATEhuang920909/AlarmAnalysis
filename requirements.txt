@@ -1,0 +1,9 @@
+# 大模型智能告警分析系统 - 依赖清单
+pandas>=2.0.0
+numpy>=1.24.0
+flask>=2.3.0
+scikit-learn>=1.2.0
+sentence-transformers>=2.2.2
+requests>=2.31.0
+openpyxl>=3.1.0
+python-dateutil>=2.8.2
