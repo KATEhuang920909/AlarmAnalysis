@@ -1,3 +1,6 @@
+
+
+
 # 大模型告警分析方案完整实现代码
 # 包含全流程核心模块 + 简单Web可视化界面
 # 运行前请安装依赖：pip install pandas flask scikit-learn sentence-transformers requests
@@ -14,9 +17,9 @@ import numpy as np
 
 # ===================== 配置项（可根据实际情况修改）=====================
 # 大模型API配置（预留，可替换为自己的API地址和密钥）
-LLM_API_URL = "https://api.openai.com/v1/chat/completions"
-LLM_API_KEY = "your-api-key-here"
-LLM_MODEL = "gpt-3.5-turbo"
+
+LLM_API_KEY = "aaa16e53a2cf92220d4fd3d9282a9fa7.A8zR3KN6eI1uKwZM"
+LLM_MODEL = "glm-4-long"
 
 # 服务依赖关系图谱（根据方案定义）
 SERVICE_DEPENDENCY = {
