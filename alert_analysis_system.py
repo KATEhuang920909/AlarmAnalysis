@@ -6,21 +6,17 @@
 # 运行前请安装依赖：pip install pandas flask scikit-learn sentence-transformers requests
 
 import pandas as pd
-import re
-import json
-import requests
-from datetime import datetime
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify
 from sklearn.cluster import DBSCAN
 from sentence_transformers import SentenceTransformer
-import numpy as np
-
+from zai import ZhipuAiClient
 # ===================== 配置项（可根据实际情况修改）=====================
 # 大模型API配置（预留，可替换为自己的API地址和密钥）
 
 LLM_API_KEY = "aaa16e53a2cf92220d4fd3d9282a9fa7.A8zR3KN6eI1uKwZM"
 LLM_MODEL = "glm-4-long"
-
+# 初始化客户端
+client = ZhipuAiClient(api_key=LLM_API_KEY)
 # 服务依赖关系图谱（根据方案定义）
 SERVICE_DEPENDENCY = {
     "frontend": ["mobservice1", "mobservice2", "webservice1", "webservice2"],
@@ -87,37 +83,34 @@ class DataPreprocessor:
 
     def llm_structured_extract(self, message_content):
         """大模型零样本结构化提取（预留真实API接口，默认返回模拟结果）"""
-        # 真实API调用代码（取消注释即可使用）
-        """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {LLM_API_KEY}"
-        }
-        prompt = "你是运维日志结构化专家，基于以下告警日志，提取核心要素，输出JSON格式：\n"
-        prompt += "- 告警级别：ERROR/WARNING/INFO\n"
-        prompt += "- 影响服务：从日志中提取，无则填无\n"
-        prompt += "- 错误类型：从日志中提取核心错误分类，如数据库连接超时、缓存内存溢出等\n"
-        prompt += "- 根因关键词：3-5个核心根因相关的关键词\n"
-        prompt += "- 影响范围：从日志中提取，无则填无\n"
-        prompt += "- 是否已知问题：是/否，基于通用运维知识判断\n"
-        prompt += f"告警日志：{message_content}"
-        data = {
-            "model": LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1
-        }
-        try:
-            response = requests.post(LLM_API_URL, headers=headers, json=data)
-            response.raise_for_status()
-            result = response.json()['choices'][0]['message']['content']
-            return json.loads(result)
-        except Exception as e:
-            print(f"大模型API调用失败：{e}，返回模拟结果")
-        """
+        # prompt = "你是运维日志结构化专家，基于以下告警日志，提取核心要素，输出JSON格式：\n"
+        # # prompt += "- 告警级别：ERROR/WARNING/INFO\n"
+        # prompt += "- 影响服务：从日志中提取，无则填无\n"
+        # prompt += "- 错误类型：从日志中提取核心错误分类，如数据库连接超时、缓存内存溢出等\n"
+        # prompt += "- 根因关键词：3-5个核心根因相关的关键词\n"
+        # prompt += "- 影响范围：从日志中提取，无则填无\n"
+        # prompt += "- 是否已知问题：是/否，基于通用运维知识判断\n"
+        # prompt += f"告警日志：{message_content}"
+        # try:
+        #
+        #     # 创建聊天完成请求
+        #     response = client.chat.completions.create(
+        #         model=LLM_MODEL,
+        #         messages=[
+        #             {"role": "user",
+        #              "content": prompt}
+        #         ]
+        #     )
+        #     # 获取回复
+        #     result=response.choices[0].message.content
+        #
+        #     return json.loads(result)
+        # except Exception as e:
+        #     print(f"大模型API调用失败：{e}，返回模拟结果")
+
 
         # 模拟返回结果（用于演示）
         return {
-            "告警级别": "WARNING",
             "影响服务": "dbservice1",
             "错误类型": "数据库连接超时",
             "根因关键词": ["数据库", "连接超时", "IO过高", "主从同步"],
@@ -133,12 +126,12 @@ class DataPreprocessor:
         # 对每条日志进行大模型结构化提取（演示用，仅处理前100条，全量处理可取消注释）
         print("开始大模型结构化提取...")
         extract_results = []
-        for idx, row in self.df.head(100).iterrows():
+        for idx, row in self.df.head(1000).iterrows():
             result = self.llm_structured_extract(row['message'])
             extract_results.append(result)
         # 合并提取结果到DataFrame
         extract_df = pd.DataFrame(extract_results)
-        self.structured_df = pd.concat([self.df.head(100).reset_index(drop=True), extract_df], axis=1)
+        self.structured_df = pd.concat([self.df.head(1000).reset_index(drop=True), extract_df], axis=1)
         print("数据预处理完成！")
         return self.structured_df
 
@@ -351,6 +344,7 @@ class RootCauseAnalysis:
                 **root_cause_result
             })
         core_metrics['fault_events'] = len(self.fault_events)
+        print(self.fault_events)
         print(f"根因定位完成，共识别出{len(self.fault_events)}个故障事件")
         return self.fault_events
 
@@ -449,6 +443,7 @@ class RiskWarning:
                 "stats_time": f"2021-07-{int(latest_stats['day'])}",
                 **warning_result
             })
+        print(self.warnings)
         core_metrics['high_risk_warnings'] = len([w for w in self.warnings if w['风险等级'] == '高'])
         core_metrics['medium_risk_warnings'] = len([w for w in self.warnings if w['风险等级'] == '中'])
         core_metrics['low_risk_warnings'] = len([w for w in self.warnings if w['风险等级'] == '低'])
@@ -511,13 +506,16 @@ def main():
     preprocessor = DataPreprocessor(df)
     structured_df = preprocessor.process()
     processed_data['structured_df'] = structured_df
-
+    print(processed_data['structured_df'].head())
+    processed_data['structured_df'].to_excel("结构化数据.xlsx")
+    # exit()
     # 3. 告警智能降噪与优先级分级
     denoiser = AlertDenoise(structured_df)
     denoised_df = denoiser.process()
     processed_data['denoised_df'] = denoised_df
     processed_data['alert_clusters'] = denoiser.alert_clusters
-
+    print(denoised_df.head())
+    print(denoiser.alert_clusters)
     # 4. 告警根因定位与关联分析
     rca = RootCauseAnalysis(structured_df)
     global alert_events
@@ -533,10 +531,7 @@ def main():
     for k, v in core_metrics.items():
         print(f"{k}: {v}")
 
-    # 7. 启动Web服务
-    print("\n启动Web可视化服务...")
-    print("访问地址：http://127.0.0.1:5000")
-    app.run(debug=False, host='0.0.0.0', port=5000)
+
 
 if __name__ == "__main__":
     main()
