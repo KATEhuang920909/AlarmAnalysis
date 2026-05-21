@@ -10,7 +10,8 @@ from flask import Flask, render_template, jsonify
 from datetime import datetime
 from sklearn.cluster import DBSCAN
 from sentence_transformers import SentenceTransformer
-from zai import ZhipuAiClient
+from zhipuai import ZhipuAI
+
 import json
 # ===================== 配置项（可根据实际情况修改）=====================
 # 大模型API配置（预留，可替换为自己的API地址和密钥）
@@ -18,7 +19,7 @@ import json
 LLM_API_KEY = "aaa16e53a2cf92220d4fd3d9282a9fa7.A8zR3KN6eI1uKwZM"
 LLM_MODEL = "glm-4-long"
 # 初始化客户端
-client = ZhipuAiClient(api_key=LLM_API_KEY)
+client = ZhipuAI(api_key=LLM_API_KEY)
 # 服务依赖关系图谱（根据方案定义）
 SERVICE_DEPENDENCY = {
     "frontend": ["mobservice1", "mobservice2", "webservice1", "webservice2"],
@@ -40,7 +41,7 @@ PRIORITY_LEVELS = {
 TIME_WINDOW_MINUTES = 10
 
 # 数据集路径
-DATASET_PATH = "../GAIA-DataSet-main/run/run_table_2021-07.csv"
+DATASET_PATH = "../GAIA-DataSet-main/sample/run_0801.xlsx"
 # ============================================================================
 
 # 初始化Flask应用
@@ -79,6 +80,7 @@ class DataPreprocessor:
           2) 标准7字段：timestamp | level | src_ip | svc_ip | service | track_id | message
           3) 无结构文本（如 SQLAlchemy 错误提示）
         """
+        # print(line)
         line = line.rstrip('\n')
 
         # 尝试按 " | " 分割（注意空格）
@@ -220,7 +222,7 @@ class AlertDenoise:
 
         # 按 content 和 5分钟时间窗口分组
         # 计算每个告警所属的时间窗口（向下取整到5分钟）
-        self.df['time_window'] = self.df['timestamp_dt'].dt.floor('10min')
+        self.df['time_window'] = self.df['timestamp_dt'].dt.floor('30min')
 
         # 按 content + 5分钟窗口 去重，统计出现次数
         duplicate_stats = self.df.groupby(['level','src_ip','service_ip','content','time_window']).agg({
@@ -245,71 +247,70 @@ class AlertDenoise:
         sentences = self.df['content'].tolist()
         embeddings = model.encode(sentences, show_progress_bar=True)
         # DBSCAN聚类
-        clustering = DBSCAN(eps=0.5, min_samples=2, metric='cosine').fit(embeddings)
+        clustering = DBSCAN(eps=0.4, min_samples=1, metric='cosine').fit(embeddings)
         labels = clustering.labels_
         # 合并聚类结果
-        self.df['cluster_id'] = labels
+        self.df['cluster_id'] = [int(k) for k in labels]
         # 统计每个聚类的信息
         for cluster_id in set(labels):
             if cluster_id == -1:
                 continue
             cluster_data = self.df[self.df['cluster_id'] == cluster_id]
             self.alert_clusters.append({
-                "cluster_id": cluster_id,
+                "cluster_id": int(cluster_id),
                 "alert_count": len(cluster_data),
                 "service": cluster_data['service'].iloc[0],
+                "level": cluster_data['level'].iloc[0],
                 "first_time": cluster_data['timestamp_raw'].min(),
                 "last_time": cluster_data['timestamp_raw'].max(),
-                "sample_message": cluster_data['message'].iloc[0]
+                "sample_content": cluster_data['content'].values.unique().tolist(),
             })
+        # print(self.alert_clusters)
         print(f"语义聚类完成，共生成{len(self.alert_clusters)}个告警聚类")
+        self.df.to_excel('clustered.xlsx', index=False)
         return self.df
 
-    def llm_alert_validity_check(self, service_name, alert_content, alert_count, time_range):
+    def llm_alert_validity_check(self, output_file):
         """大模型告警有效性判断与优先级分级（预留真实API接口，默认返回模拟结果）"""
         # 真实API调用代码（取消注释即可使用）
+        report = ""
+        with open(output_file, "w", encoding="utf-8") as f:
+            for unit in self.alert_clusters:
+                cluster_id = unit['cluster_id']
+                values = unit.values()
+                prompt = f"请作为SRE专家，分析以下属于同一聚类ID的日志统计信息。\
+                聚类ID: [替换为具体ID，如0、1、2]\
+                日志统计信息：\
+                [{values}]\
+                请输出结构化分析报告，只包含如下内容：\
+                事件ID: [替换为具体ID，如0、1、2]\
+                1. 聚类概要：告警类型、严重程度（高/中/低）、典型日志模板（动态变量用{{}}标注）\
+                2. 关键特征：涉及的主要服务、日志级别、核心关键词、时间/频率模式、相关ID/参数规律\
+                3. 建议与行动：监控指标、告警优化（是否需升降级）、处理建议（正常流程可降级DEBUG，异常流程给出排查步骤）、还需哪些数据确认根因"
+                prompt = prompt.replace("[替换为具体ID，如0、1、2]", str(cluster_id))
 
-        prompt = "你是运维告警有效性专家，基于以下信息，判断告警是否有效，输出JSON格式：\n"
-        prompt += "1.是否有效：是/否\n"
-        prompt += "2. 优先级：P0（必须立即处理）/P1（1小时内处理）/P2（当天处理）/P3（低优先级，可忽略）\n"
-        prompt += "3. 判断依据：详细说明判断的逻辑，结合运维知识和业务场景\n"
-        prompt += "4. 建议处理动作：针对有效告警，给出具体的处理建议\n"
-        prompt += "输入信息：\n"
-        prompt += f"- 服务名称：{service_name}\n"
-        prompt += f"- 告警内容：{alert_content}\n"
-        prompt += f"- 出现频次：{alert_count}次，时间范围：{time_range}\n"
-        prompt += f"- 服务依赖关系：{SERVICE_DEPENDENCY}"
-        try:
-               # 创建聊天完成请求
-            response = client.chat.completions.create(
-                model=LLM_MODEL,
-                messages=[
-                    {"role": "user",
-                     "content": prompt}
-                ]
-            )
-            # 获取回复
-            result=response.choices[0].message.content
-            return json.loads(result)
-        except Exception as e:
-            print(f"大模型API调用失败：{e}，返回模拟结果")
+                full_content = ""
+                response = client.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    thinking={
+                        "type": "disabled",  # 启用深度思考模式
+                    },
+                    stream=True,
+                    max_tokens=4000
+                )
 
-
-        # 模拟返回结果（用于演示）
-        if alert_count >= 5:
-            return {
-                "是否有效": "是",
-                "优先级": "P1",
-                "判断依据": "该告警在短时间内多次出现，属于高频有效告警，会影响业务性能",
-                "建议处理动作": "立即登录服务器查看服务状态，检查相关资源使用情况"
-            }
-        else:
-            return {
-                "是否有效": "否",
-                "优先级": "P3",
-                "判断依据": "该告警仅出现少量次数，属于偶发无效告警，无业务影响",
-                "建议处理动作": "可忽略，持续观察后续是否再次出现"
-            }
+                for chunk in response:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        full_content += content
+                        print(content, end="", flush=True)  # 实时打印
+                        f.write(content)
+                        f.flush()  # 实时刷新，不缓存
+                report +=""
+                report += full_content + "\n"
+        print(f"\n\n✅ 报告已生成：{output_file}")
+        return report
 
     def process(self):
         """智能降噪主流程"""
@@ -317,34 +318,20 @@ class AlertDenoise:
         # 基础去重
         duplicate_stats = self.base_duplicate_removal()
         duplicate_stats.to_excel("去重数据.xlsx")
+        # exit()
         # 语义聚类
         self.semantic_clustering()
-        # 有效性判断与优先级分级
-        validity_results = []
-        for idx, row in duplicate_stats.iterrows():
-            time_range = f"{row['first_time']} 至 {row['last_time']}"
-            result = self.llm_alert_validity_check(
-                row['service'], row['message'], row['alert_count'], time_range
-            )
-            validity_results.append({
-                "message": row['message'],
-                "service": row['service'],
-                "alert_count": row['alert_count'],
-                "first_time": row['first_time'],
-                "last_time": row['last_time'],
-                **result
-            })
-        self.denoised_df = pd.DataFrame(validity_results)
+
+
         # 计算核心指标
-        total_alerts = len(self.df)
-        valid_alerts = len(self.denoised_df[self.denoised_df['是否有效'] == '是'])
-        noise_reduction_rate = (total_alerts - valid_alerts) / total_alerts * 100
-        core_metrics['total_alerts'] = total_alerts
-        core_metrics['valid_alerts'] = valid_alerts
+
+        noise_reduction_rate = (self.df.shape[0] - duplicate_stats.shape[0]) / self.df.shape[0] * 100
         core_metrics['noise_reduction_rate'] = round(noise_reduction_rate, 2)
         core_metrics['alert_clusters'] = len(self.alert_clusters)
-        print(f"智能降噪完成，总告警数：{total_alerts}，有效告警数：{valid_alerts}，降噪率：{noise_reduction_rate:.2f}%")
-        return self.denoised_df
+        print(f"智能降噪完成，总告警数：{self.df.shape[0]}，降噪告警数：{duplicate_stats.shape[0]}，告警事件数：{len(self.alert_clusters)}，降噪率：{noise_reduction_rate:.2f}%")
+        print("生成告警分析报告...")
+        report = self.llm_alert_validity_check("告警分析报告.md")
+        return report
 
 # 3. 告警根因定位与关联分析模块
 class RootCauseAnalysis:
@@ -582,7 +569,8 @@ def get_warnings():
 def main():
     # 1. 加载原始数据
     print("加载原始数据集...")
-    df = pd.read_csv(DATASET_PATH)
+    df = pd.read_excel(DATASET_PATH,)
+
     print(f"原始数据集加载完成，共{len(df)}条数据")
 
     # 2. 数据预处理与结构化解析
@@ -590,14 +578,13 @@ def main():
     structured_df = preprocessor.process()
     processed_data['structured_df'] = structured_df
     print(processed_data['structured_df'].head())
-    processed_data['structured_df'].to_excel("结构化数据2.xlsx")
-    # 3. 告警智能降噪与优先级分级
+    processed_data['structured_df'].to_excel("结构化数据.xlsx")
+    # 3. 告警分析
     denoiser = AlertDenoise(structured_df)
-    denoised_df = denoiser.process()
-    processed_data['denoised_df'] = denoised_df
+    alert_report = denoiser.process()
+    processed_data['alert_report'] = alert_report
     processed_data['alert_clusters'] = denoiser.alert_clusters
-    processed_data['denoised_df'].to_excel("降噪数据.xlsx")
-    # exit()
+    exit()
     # 4. 告警根因定位与关联分析
     rca = RootCauseAnalysis(structured_df)
     global alert_events
