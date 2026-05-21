@@ -7,9 +7,11 @@
 
 import pandas as pd
 from flask import Flask, render_template, jsonify
+from datetime import datetime
 from sklearn.cluster import DBSCAN
 from sentence_transformers import SentenceTransformer
 from zai import ZhipuAiClient
+import json
 # ===================== 配置项（可根据实际情况修改）=====================
 # 大模型API配置（预留，可替换为自己的API地址和密钥）
 
@@ -38,7 +40,7 @@ PRIORITY_LEVELS = {
 TIME_WINDOW_MINUTES = 10
 
 # 数据集路径
-DATASET_PATH = "run/run_table_2021-07.csv"
+DATASET_PATH = "../GAIA-DataSet-main/run/run_table_2021-07.csv"
 # ============================================================================
 
 # 初始化Flask应用
@@ -60,7 +62,7 @@ class DataPreprocessor:
 
     def split_datetime(self):
         """拆分datetime字段为年、月、日、时、分、秒"""
-        self.df['datetime'] = pd.to_datetime(self.df['datetime'])
+        self.df['datetime'] = pd.to_datetime(self.df['timestamp_raw'], errors='coerce')
         self.df['year'] = self.df['datetime'].dt.year
         self.df['month'] = self.df['datetime'].dt.month
         self.df['day'] = self.df['datetime'].dt.day
@@ -69,16 +71,69 @@ class DataPreprocessor:
         self.df['second'] = self.df['datetime'].dt.second
         return self.df
 
+    def parse_log_line(self,line: str) -> dict:
+        """
+        解析单行日志，返回结构化字典。
+        支持三种格式：
+          1) 标准6字段：timestamp | level | src_ip | svc_ip | service | message
+          2) 标准7字段：timestamp | level | src_ip | svc_ip | service | track_id | message
+          3) 无结构文本（如 SQLAlchemy 错误提示）
+        """
+        line = line.rstrip('\n')
+
+        # 尝试按 " | " 分割（注意空格）
+        parts = line.split(" | ")
+        # 常见的无结构错误消息（第三种格式）
+        if len(parts) not in (6, 7):
+            # 如果是纯文本（如以 "(Background on this error" 开头）
+            return {
+                "level": "NONE",  # 默认级别，可调整
+                "message": line
+            }
+
+        # 有结构日志：至少6个部分
+        timestamp_str = parts[0].strip()
+        level = parts[1].strip()
+        src_ip = parts[2].strip()
+        svc_ip = parts[3].strip()
+        service = parts[4].strip()
+
+        # 区分6字段还是7字段
+        if len(parts) == 6:
+            track_id = None
+            content = parts[5].strip()
+        else:  # len == 7
+            track_id = parts[5].strip()
+            content = parts[6].strip()
+
+        # 转换时间戳（可选，保留原始字符串和解析后的ISO格式）
+        parsed_ts = None
+        try:
+            # 格式：2021-07-01 15:10:23,517 -> 替换逗号为小数点
+            normalized = timestamp_str.replace(',', '.')
+            dt = datetime.strptime(normalized, "%Y-%m-%d %H:%M:%S.%f")
+            parsed_ts = dt.isoformat()
+        except ValueError:
+            parsed_ts = None
+
+        result = {
+            "timestamp_raw": timestamp_str,
+            "timestamp_iso": parsed_ts,
+            "level": level,
+            "src_ip": src_ip,
+            "service_ip": svc_ip,
+            "content": content,
+        }
+        if track_id:
+            result["track_id"] = track_id
+
+        return result
+
     def regex_split_message(self):
         """用正则拆分message字段为基础结构化字段"""
         # 正则匹配日志格式：时间 | 级别 | IP | 内容
-        pattern = r'^(?P<log_time>[\d\-\s:,]+) \| (?P<log_level>\w+) \| (?P<source_ip>[\d.]+) \| (?P<content>.*)$'
-        split_result = self.df['message'].str.extract(pattern)
-        self.df = pd.concat([self.df, split_result], axis=1)
-        # 填充拆分失败的字段
-        self.df['log_level'] = self.df['log_level'].fillna('UNKNOWN')
-        self.df['source_ip'] = self.df['source_ip'].fillna('UNKNOWN')
-        self.df['content'] = self.df['content'].fillna(self.df['message'])
+        split_result = self.df['message'].apply(lambda x: self.parse_log_line(x))
+        self.df = pd.concat([self.df, pd.DataFrame(split_result.values.tolist())], axis=1)
         return self.df
 
     def llm_structured_extract(self, message_content):
@@ -121,9 +176,12 @@ class DataPreprocessor:
     def process(self):
         """全量数据预处理主流程"""
         print("开始数据预处理...")
-        self.split_datetime()
+
         self.regex_split_message()
+
+        self.split_datetime()
         # 对每条日志进行大模型结构化提取（演示用，仅处理前100条，全量处理可取消注释）
+        """
         print("开始大模型结构化提取...")
         extract_results = []
         for idx, row in self.df.head(1000).iterrows():
@@ -134,6 +192,9 @@ class DataPreprocessor:
         self.structured_df = pd.concat([self.df.head(1000).reset_index(drop=True), extract_df], axis=1)
         print("数据预处理完成！")
         return self.structured_df
+        """
+        return self.df
+
 
 # 2. 告警智能降噪与优先级分级模块
 class AlertDenoise:
@@ -142,14 +203,37 @@ class AlertDenoise:
         self.denoised_df = None
         self.alert_clusters = []
 
+    # def base_duplicate_removal(self):
+    #     """基础完全重复告警去重"""
+    #     # 按message完全去重，统计出现次数
+    #     duplicate_stats = self.df.groupby('content').agg({
+    #         'timestamp_raw': ['min', 'max', 'count'],
+    #         'service': 'first'
+    #     }).reset_index()
+    #     duplicate_stats.columns = ['content', 'first_time', 'last_time', 'alert_count', 'service']
+    #     return duplicate_stats
+
     def base_duplicate_removal(self):
-        """基础完全重复告警去重"""
-        # 按message完全去重，统计出现次数
-        duplicate_stats = self.df.groupby('message').agg({
-            'datetime': ['min', 'max', 'count'],
+        """基础完全重复告警去重（5分钟窗口）"""
+        # 将时间戳转为 datetime 类型
+        self.df['timestamp_dt'] = pd.to_datetime(self.df['timestamp_raw'])
+
+        # 按 content 和 5分钟时间窗口分组
+        # 计算每个告警所属的时间窗口（向下取整到5分钟）
+        self.df['time_window'] = self.df['timestamp_dt'].dt.floor('10min')
+
+        # 按 content + 5分钟窗口 去重，统计出现次数
+        duplicate_stats = self.df.groupby(['level','src_ip','service_ip','content','time_window']).agg({
+            'timestamp_dt': ['min', 'max', 'count'],
             'service': 'first'
         }).reset_index()
-        duplicate_stats.columns = ['message', 'first_time', 'last_time', 'alert_count', 'service']
+
+        # 扁平化多级列名
+        duplicate_stats.columns = ['level','src_ip','service_ip','content', 'time_window', 'first_time', 'last_time', 'alert_count', 'service']
+
+        # 可选：删除辅助列
+        # duplicate_stats = duplicate_stats.drop(columns=['time_window'])
+
         return duplicate_stats
 
     def semantic_clustering(self):
@@ -174,8 +258,8 @@ class AlertDenoise:
                 "cluster_id": cluster_id,
                 "alert_count": len(cluster_data),
                 "service": cluster_data['service'].iloc[0],
-                "first_time": cluster_data['datetime'].min(),
-                "last_time": cluster_data['datetime'].max(),
+                "first_time": cluster_data['timestamp_raw'].min(),
+                "last_time": cluster_data['timestamp_raw'].max(),
                 "sample_message": cluster_data['message'].iloc[0]
             })
         print(f"语义聚类完成，共生成{len(self.alert_clusters)}个告警聚类")
@@ -184,11 +268,7 @@ class AlertDenoise:
     def llm_alert_validity_check(self, service_name, alert_content, alert_count, time_range):
         """大模型告警有效性判断与优先级分级（预留真实API接口，默认返回模拟结果）"""
         # 真实API调用代码（取消注释即可使用）
-        """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {LLM_API_KEY}"
-        }
+
         prompt = "你是运维告警有效性专家，基于以下信息，判断告警是否有效，输出JSON格式：\n"
         prompt += "1.是否有效：是/否\n"
         prompt += "2. 优先级：P0（必须立即处理）/P1（1小时内处理）/P2（当天处理）/P3（低优先级，可忽略）\n"
@@ -199,19 +279,21 @@ class AlertDenoise:
         prompt += f"- 告警内容：{alert_content}\n"
         prompt += f"- 出现频次：{alert_count}次，时间范围：{time_range}\n"
         prompt += f"- 服务依赖关系：{SERVICE_DEPENDENCY}"
-        data = {
-            "model": LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1
-        }
         try:
-            response = requests.post(LLM_API_URL, headers=headers, json=data)
-            response.raise_for_status()
-            result = response.json()['choices'][0]['message']['content']
+               # 创建聊天完成请求
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=[
+                    {"role": "user",
+                     "content": prompt}
+                ]
+            )
+            # 获取回复
+            result=response.choices[0].message.content
             return json.loads(result)
         except Exception as e:
             print(f"大模型API调用失败：{e}，返回模拟结果")
-        """
+
 
         # 模拟返回结果（用于演示）
         if alert_count >= 5:
@@ -234,6 +316,7 @@ class AlertDenoise:
         print("开始告警智能降噪...")
         # 基础去重
         duplicate_stats = self.base_duplicate_removal()
+        duplicate_stats.to_excel("去重数据.xlsx")
         # 语义聚类
         self.semantic_clustering()
         # 有效性判断与优先级分级
@@ -272,9 +355,9 @@ class RootCauseAnalysis:
     def time_window_correlation(self):
         """时间窗口内的告警关联分析"""
         # 按时间排序
-        sorted_df = self.df.sort_values('datetime').reset_index(drop=True)
+        sorted_df = self.df.sort_values('timestamp_raw').reset_index(drop=True)
         # 按时间窗口分组
-        sorted_df['time_window'] = sorted_df['datetime'].dt.floor(f'{TIME_WINDOW_MINUTES}min')
+        sorted_df['time_window'] = sorted_df['timestamp_raw'].dt.floor(f'{TIME_WINDOW_MINUTES}min')
         # 统计每个时间窗口的告警
         window_groups = sorted_df.groupby('time_window')
         return window_groups
@@ -333,7 +416,7 @@ class RootCauseAnalysis:
                 alert_list.append({
                     "service": row['service'],
                     "message": row['message'],
-                    "datetime": row['datetime'].strftime('%Y-%m-%d %H:%M:%S')
+                    "datetime": row['timestamp_raw'].strftime('%Y-%m-%d %H:%M:%S')
                 })
             # 根因推理
             root_cause_result = self.llm_root_cause_inference(alert_list)
@@ -507,15 +590,14 @@ def main():
     structured_df = preprocessor.process()
     processed_data['structured_df'] = structured_df
     print(processed_data['structured_df'].head())
-    processed_data['structured_df'].to_excel("结构化数据.xlsx")
-    # exit()
+    processed_data['structured_df'].to_excel("结构化数据2.xlsx")
     # 3. 告警智能降噪与优先级分级
     denoiser = AlertDenoise(structured_df)
     denoised_df = denoiser.process()
     processed_data['denoised_df'] = denoised_df
     processed_data['alert_clusters'] = denoiser.alert_clusters
-    print(denoised_df.head())
-    print(denoiser.alert_clusters)
+    processed_data['denoised_df'].to_excel("降噪数据.xlsx")
+    # exit()
     # 4. 告警根因定位与关联分析
     rca = RootCauseAnalysis(structured_df)
     global alert_events
