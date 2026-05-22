@@ -584,7 +584,6 @@ def main():
     alert_report = denoiser.process()
     processed_data['alert_report'] = alert_report
     processed_data['alert_clusters'] = denoiser.alert_clusters
-    exit()
     # 4. 告警根因定位与关联分析
     rca = RootCauseAnalysis(structured_df)
     global alert_events
