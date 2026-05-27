@@ -342,21 +342,21 @@ def task2_denoising():
                 with st.spinner("正在进行智能降噪..."):
                     try:
                         st.session_state.task2_structured_df = input_df
-                        
+                        denoiser = AlertDenoise(input_df, None)
                         st.markdown('<div class="section-header">2️⃣ 降噪进度</div>', unsafe_allow_html=True)
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         
-                        status_text.text("正在进行基础去重...")
+                        status_text.text("正在进行基础降噪...")
                         progress_bar.progress(20)
                         time.sleep(0.3)
-                        
-                        denoiser = AlertDenoise(input_df, None)
-                        status_text.text("正在生成去重统计...")
+                        denoised_df = denoiser.base_duplicate_removal()
+
+                        status_text.text("正在生成降噪统计...")
                         progress_bar.progress(50)
                         time.sleep(0.3)
                         
-                        _, denoised_df = denoiser.process()
+
                         status_text.text("正在保存结果...")
                         progress_bar.progress(80)
                         time.sleep(0.3)
@@ -419,7 +419,7 @@ def task3_event_extraction():
     
     data_source = st.radio(
         "数据来源",
-        ["使用任务一的结果", "上传新文件"],
+        ["使用任务二的结果", "上传新文件"],
         horizontal=True
     )
     
@@ -433,11 +433,11 @@ def task3_event_extraction():
             help="支持 CSV、Excel 格式的结构化数据"
         )
     else:
-        if st.session_state.task1_structured_df is not None:
-            st.success("✅ 已加载任务一的结构化数据")
-            input_df = st.session_state.task1_structured_df
+        if st.session_state.task2_denoised_df is not None:
+            st.success("✅ 已加载任务二的结构化数据")
+            input_df = st.session_state.task2_denoised_df
         else:
-            st.warning("⚠️ 请先完成任务一，或选择上传新文件")
+            st.warning("⚠️ 请先完成任务二，或选择上传新文件")
     
     if data_source == "上传新文件" and uploaded_file is not None:
         st.success(f"✅ 已选择文件: {uploaded_file.name}")
@@ -465,14 +465,14 @@ def task3_event_extraction():
                         progress_bar.progress(30)
                         time.sleep(0.5)
                         
-                        denoiser.semantic_clustering()
+                        alert_clusters = denoiser.semantic_clustering()
                         
                         status_text.text("正在进行聚类分析...")
                         progress_bar.progress(60)
                         time.sleep(0.5)
                         
-                        st.session_state.task3_clusters = denoiser.alert_clusters
-                        processed_data['alert_clusters'] = denoiser.alert_clusters
+                        st.session_state.task3_clusters = alert_clusters
+                        processed_data['alert_clusters'] = alert_clusters
                         
                         status_text.text("事件抽取完成！")
                         progress_bar.progress(100)
@@ -480,7 +480,7 @@ def task3_event_extraction():
                         
                         st.session_state.task3_complete = True
                         
-                        st.success(f"✅ 事件抽取完成！共发现 {len(denoiser.alert_clusters)} 个告警事件")
+                        st.success(f"✅ 事件抽取完成！共发现 {len(alert_clusters)} 个告警事件")
                     
                     except Exception as e:
                         st.error(f"❌ 事件抽取失败: {str(e)}")
@@ -540,7 +540,7 @@ def task4_report_generation():
     
     data_source = st.radio(
         "数据来源",
-        ["使用任务三的结果", "使用任务一的结果", "上传新文件"],
+        ["使用任务三的结果", "上传新文件"],
         horizontal=True
     )
     
@@ -557,16 +557,9 @@ def task4_report_generation():
     elif data_source == "使用任务三的结果":
         if st.session_state.task3_clusters and st.session_state.task3_structured_df is not None:
             st.success("✅ 已加载任务三的数据")
-            input_df = st.session_state.task3_structured_df
-            input_clusters = st.session_state.task3_clusters
+            input_df = pd.DataFrame(st.session_state.task3_clusters)
         else:
             st.warning("⚠️ 请先完成任务三，或选择其他数据来源")
-    else:
-        if st.session_state.task1_structured_df is not None:
-            st.success("✅ 已加载任务一的结构化数据")
-            input_df = st.session_state.task1_structured_df
-        else:
-            st.warning("⚠️ 请先完成任务一，或选择其他数据来源")
     
     if data_source == "上传新文件" and uploaded_file is not None:
         st.success(f"✅ 已选择文件: {uploaded_file.name}")
@@ -594,33 +587,38 @@ def task4_report_generation():
                         st.session_state.task4_progress.append("\n### 📈 分析概述\n")
                         st.session_state.task4_progress.append(f"\n- 分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                         st.session_state.task4_progress.append(f"- 日志总数: {len(input_df)}\n")
-                        
-                        status_text.text("正在进行数据预处理...")
-                        progress_bar.progress(20)
-                        time.sleep(0.3)
+                        st.session_state.task4_progress.append(f"- 事件总数: {len(st.session_state.task3_clusters)}\n")
+
+
                         
                         denoiser = AlertDenoise(input_df, None)
                         
-                        status_text.text("正在进行智能降噪...")
+                        status_text.text("正在进行告警分析...")
                         progress_bar.progress(35)
                         time.sleep(0.3)
+                        # print("st.session_state.task4_structured_df",st.session_state.task4_structured_df)
+                        # exit()
+                        report= denoiser.llm_alert_validity_check(st.session_state.task4_structured_df.head(1))
                         
-                        _, denoised_df = denoiser.process()
-                        
-                        st.session_state.task4_clusters = denoiser.alert_clusters
-                        st.session_state.task4_progress.append(f"- 降噪后: {len(denoised_df)}\n")
-                        noise_reduction = ((len(input_df) - len(denoised_df)) / len(input_df) * 100)
-                        st.session_state.task4_progress.append(f"- 降噪率: {noise_reduction:.2f}%\n")
-                        st.session_state.task4_progress.append(f"- 发现事件: {len(denoiser.alert_clusters)} 个\n")
-                        
+                        # st.session_state.task4_clusters = denoiser.alert_clusters
+                        # st.session_state.task4_progress.append(f"- 降噪后: {len(denoised_df)}\n")
+                        # noise_reduction = ((len(input_df) - len(denoised_df)) / len(input_df) * 100)
+                        # st.session_state.task4_progress.append(f"- 降噪率: {noise_reduction:.2f}%\n")
+                        # st.session_state.task4_progress.append(f"- 发现事件: {len(denoiser.alert_clusters)} 个\n")
+                        #
+                        print("report...",report)
+                        # exit()
                         status_text.text("正在生成事件分析...")
                         progress_bar.progress(50)
                         time.sleep(0.3)
                         
                         st.session_state.task4_progress.append("\n---\n")
                         st.session_state.task4_progress.append("\n### 🎯 事件分析\n")
-                        
-                        for idx, cluster in enumerate(denoiser.alert_clusters):
+                        alert_clusters_dict = st.session_state.task4_structured_df.head(1).T.to_dict()
+                        for idx, cluster in enumerate( alert_clusters_dict):
+                            print(cluster)
+                            cluster= alert_clusters_dict[cluster]
+                            # exit()
                             st.session_state.task4_progress.append(f"\n#### 事件 {cluster.get('cluster_id', idx)}\n")
                             st.session_state.task4_progress.append(f"- **服务**: {cluster.get('service', 'N/A')}\n")
                             st.session_state.task4_progress.append(f"- **级别**: {cluster.get('level', 'N/A')}\n")
@@ -634,21 +632,11 @@ def task4_report_generation():
                                 for content in sample_content[:2]:
                                     st.session_state.task4_progress.append(f"- {content}\n")
                             
-                            progress_bar.progress(50 + (idx + 1) * (40 // len(denoiser.alert_clusters)))
-                            status_text.text(f"正在分析事件 {idx + 1}/{len(denoiser.alert_clusters)}...")
+                            progress_bar.progress(50 + (idx + 1) * (40 // len(alert_clusters_dict)))
+                            status_text.text(f"正在分析事件 {idx + 1}/{len(alert_clusters_dict)}...")
                             time.sleep(0.2)
-                        
-                        status_text.text("正在生成建议...")
-                        progress_bar.progress(90)
-                        time.sleep(0.3)
-                        
-                        st.session_state.task4_progress.append("\n---\n")
-                        st.session_state.task4_progress.append("\n### 💡 建议与总结\n")
-                        st.session_state.task4_progress.append("\n1. **监控建议**: 建议持续关注高频告警的服务\n")
-                        st.session_state.task4_progress.append("2. **告警优化**: 根据告警频率调整告警级别\n")
-                        st.session_state.task4_progress.append("3. **后续分析**: 可进一步分析告警的时间分布模式\n")
-                        
-                        st.session_state.task4_report = "".join(st.session_state.task4_progress)
+
+                        st.session_state.task4_report = "".join(st.session_state.task4_progress)+report
                         processed_data['alert_report'] = st.session_state.task4_report
                         
                         status_text.text("报告生成完成！")

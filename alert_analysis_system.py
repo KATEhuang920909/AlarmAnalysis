@@ -184,7 +184,8 @@ class AlertDenoise:
     def semantic_clustering(self):
         self.update_progress("事件抽取", 70, "开始语义聚类")
         model = SentenceTransformer('all-MiniLM-L6-v2')
-        sentences = self.df['content'].tolist()
+        # 确保输入是字符串列表，而不是列表的列表
+        sentences = [c[0] if isinstance(c, list) and c else "" for c in self.df['content']]
         self.update_progress("事件抽取", 72, "正在编码日志内容")
         embeddings = model.encode(sentences, show_progress_bar=False)
         self.update_progress("事件抽取", 80, "编码完成，开始聚类")
@@ -199,33 +200,41 @@ class AlertDenoise:
             cluster_data = self.df[self.df['cluster_id'] == cluster_id]
             self.alert_clusters.append({
                 "cluster_id": int(cluster_id),
-                "alert_count": len(cluster_data),
-                "service": cluster_data['service'].values.unique().tolist(),
+                "alert_count": cluster_data['alert_count'].sum(),
+                "service": cluster_data['service'].unique().tolist(),
                 "level": cluster_data['level'].iloc[0],
-                "first_time": cluster_data['timestamp_raw'].min(),
-                "last_time": cluster_data['timestamp_raw'].max(),
-                "sample_content": cluster_data['content'].values.unique().tolist(),
-                "track_id_sample": cluster_data['track_id'].iloc[0] if 'track_id' in cluster_data.columns else None,
+                "first_time": cluster_data['first_time'].min(),
+                "last_time": cluster_data['last_time'].max(),
+                "sample_content": cluster_data['content'].iloc[0],
+                "track_id_sample": cluster_data['trace_id_list'].iloc[0][0] if 'trace_id_list' in cluster_data.columns and len(cluster_data['trace_id_list'].iloc[0]) > 0 else None,
             })
 
         self.update_progress("事件抽取", 85, f"聚类完成，发现 {len(self.alert_clusters)} 个事件")
-
-    def llm_alert_validity_check(self, output_file):
+        return self.alert_clusters
+    def llm_alert_validity_check(self, alert_clusters_df, output_file="告警分析报告"):
         self.update_progress("报告生成", 88, "开始生成分析报告")
         report = ""
+        
+        if alert_clusters_df.empty:
+            self.update_progress("报告生成", 95, "没有可分析的事件，跳过报告生成")
+            return ""
 
-        for unit in self.alert_clusters:
+        alert_clusters_dict = alert_clusters_df.T.to_dict()
+        num_clusters = len(alert_clusters_dict)
+
+        for i, unit_key in enumerate(alert_clusters_dict):
+            unit = alert_clusters_dict[unit_key]
             cluster_id = unit['cluster_id']
-            values = list(unit.values())
-            prompt = f"""请作为SRE专家，分析以下属于同一聚类ID的日志统计信息。
+            
+            prompt = f"""请作为SRE专家，分析以下属于同一聚类ID的日志统计信息。以markdown的格式返回分析报告。
             聚类ID: {cluster_id}
-            日志统计信息：{values}
+            日志统计信息：{unit}
             请输出分析报告，只包含如下内容：
             事件ID: {cluster_id}
-            1. 聚类概要：告警类型、严重程度（高/中/低）、典型日志模板（动态变量用{{}}标注）
-            2. 关键特征：涉及的主要服务、日志级别、核心关键词、时间/频率模式、相关ID/参数规律
+            1. 聚类概要：告警类型、日志模板（动态变量用{{}}标注）
+            2. 关键特征：涉及的主要服务、日志级别、核心关键词（多个关键词用逗号分隔）、时间/频率模式、相关ID/参数规律
             3. 建议与行动：监控指标、告警优化（是否需升降级）、处理建议（正常流程可降级DEBUG，异常流程给出排查步骤）、还需哪些数据确认根因"""
-
+            
             full_content = ""
             try:
                 response = client.chat.completions.create(
@@ -234,17 +243,21 @@ class AlertDenoise:
                     stream=True,
                     max_tokens=4000
                 )
-                with open(f"{output_file}_{cluster_id}_{unit['level']}.md", "w", encoding="utf-8") as f:
-                    for chunk in response:
-                        content = chunk.choices[0].delta.content
-                        if content:
-                            full_content += content
-                            f.write(content)
-                            f.flush()
+                
+                for chunk in response:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        full_content += content
+                        print(content, end="", flush=True)
+                        self.update_progress("报告流", 90, content)
             except Exception as e:
-                full_content = f"报告生成失败: {str(e)}"
-            
+                error_message = f"调用LLM为事件 {cluster_id} 生成报告时出错: {str(e)}"
+                self.update_progress("错误", 90, error_message)
+                full_content = error_message
+                
             report += full_content + "\n\n"
+            progress = 88 + int(((i + 1) / num_clusters) * 7)
+            self.update_progress("报告生成", progress, f"事件 {cluster_id} 报告生成完毕")
 
         self.update_progress("报告生成", 95, "报告生成完成")
         return report
@@ -258,11 +271,11 @@ class AlertDenoise:
         alert_clusters_df = pd.DataFrame(self.alert_clusters)
         alert_clusters_df.to_excel('事件挖掘.xlsx', index=False)
 
-        noise_reduction_rate = (self.df.shape[0] - duplicate_stats.shape[0]) / self.df.shape[0] * 100
+        noise_reduction_rate = (self.df.shape[0] - duplicate_stats.shape[0]) / self.df.shape[0] * 100 if self.df.shape[0] > 0 else 0
         core_metrics['noise_reduction_rate'] = round(noise_reduction_rate, 2)
         core_metrics['alert_clusters'] = len(self.alert_clusters)
 
-        report = self.llm_alert_validity_check("告警分析报告")
+        report = self.llm_alert_validity_check(alert_clusters_df, "告警分析报告")
         return report, duplicate_stats
 
 # class RootCauseAnalysis:
