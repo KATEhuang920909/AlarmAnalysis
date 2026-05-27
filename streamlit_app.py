@@ -25,30 +25,30 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2rem;
+        font-size: 1.8rem;
         font-weight: bold;
         color: #1f77b4;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1rem;
     }
     .section-header {
-        font-size: 1.3rem;
+        font-size: 1.15rem;
         font-weight: bold;
         color: #2c3e50;
-        margin-top: 1.5rem;
-        margin-bottom: 1rem;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
     }
     .step-box {
         background: #f8f9fa;
-        padding: 1rem;
+        padding: 0.8rem;
         border-radius: 8px;
         margin: 0.5rem 0;
         border-left: 4px solid #1f77b4;
     }
     .download-section {
         background: #e8f4f8;
-        padding: 1rem;
+        padding: 0.8rem;
         border-radius: 8px;
-        margin-top: 1rem;
+        margin-top: 0.8rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -133,12 +133,11 @@ def download_df(df, filename_prefix, filetype='csv'):
 
 def home_page():
     st.title("📊 告警日志分析系统")
-    st.markdown("---")
     
     st.markdown("""
-    <div style="text-align: center; padding: 2rem;">
-        <h2>欢迎使用告警日志分析系统</h2>
-        <p style="font-size: 1.2rem; color: #666; margin-top: 1rem;">
+    <div style="text-align: center; padding: 1.5rem 1rem;">
+        <h2 style="margin-bottom: 0.5rem;">欢迎使用告警日志分析系统</h2>
+        <p style="font-size: 1.1rem; color: #666; margin-top: 0.5rem;">
             请从左侧菜单栏选择要执行的分析任务
         </p>
     </div>
@@ -148,7 +147,7 @@ def home_page():
     
     with col1:
         st.markdown("""
-        <div style="background: #e8f4f8; padding: 1.5rem; border-radius: 10px; text-align: center;">
+        <div style="background: #e8f4f8; padding: 1rem; border-radius: 10px; text-align: center; height: 100%;">
             <h3>📋</h3>
             <p><strong>日志解析</strong></p>
             <p style="font-size: 0.9rem; color: #666;">
@@ -159,7 +158,7 @@ def home_page():
     
     with col2:
         st.markdown("""
-        <div style="background: #fce4ec; padding: 1.5rem; border-radius: 10px; text-align: center;">
+        <div style="background: #fce4ec; padding: 1rem; border-radius: 10px; text-align: center; height: 100%;">
             <h3>🔇</h3>
             <p><strong>智能降噪</strong></p>
             <p style="font-size: 0.9rem; color: #666;">
@@ -170,7 +169,7 @@ def home_page():
     
     with col3:
         st.markdown("""
-        <div style="background: #fff3e0; padding: 1.5rem; border-radius: 10px; text-align: center;">
+        <div style="background: #fff3e0; padding: 1rem; border-radius: 10px; text-align: center; height: 100%;">
             <h3>🎯</h3>
             <p><strong>事件抽取</strong></p>
             <p style="font-size: 0.9rem; color: #666;">
@@ -181,18 +180,17 @@ def home_page():
     
     with col4:
         st.markdown("""
-        <div style="background: #e8f5e9; padding: 1.5rem; border-radius: 10px; text-align: center;">
+        <div style="background: #e8f5e9; padding: 1rem; border-radius: 10px; text-align: center; height: 100%;">
             <h3>📝</h3>
-            <p><strong>分析报告</strong></p>
+            <p><strong>告警事件分析</strong></p>
             <p style="font-size: 0.9rem; color: #666;">
-                生成完整的告警分析报告（流式输出）
+                生成告警事件分析报告
             </p>
         </div>
         """, unsafe_allow_html=True)
 
 def task1_log_parsing():
     st.title("📋 任务一：日志解析")
-    st.markdown("---")
     
     st.markdown('<div class="section-header">1️⃣ 上传原始日志文件</div>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader(
@@ -305,7 +303,6 @@ def task1_log_parsing():
 
 def task2_denoising():
     st.title("🔇 任务二：智能降噪")
-    st.markdown("---")
     
     st.markdown('<div class="section-header">1️⃣ 上传结构化数据</div>', unsafe_allow_html=True)
     
@@ -413,7 +410,6 @@ def task2_denoising():
 
 def task3_event_extraction():
     st.title("🎯 任务三：事件抽取")
-    st.markdown("---")
     
     st.markdown('<div class="section-header">1️⃣ 上传结构化数据</div>', unsafe_allow_html=True)
     
@@ -515,7 +511,7 @@ def task3_event_extraction():
                     st.write(f"**首次发生:** {cluster.get('first_time', 'N/A')}")
                     st.write(f"**最后发生:** {cluster.get('last_time', 'N/A')}")
                     st.write("**示例内容:**")
-                    sample_content = cluster.get('sample_content', [])
+                    sample_content = eval(cluster.get('sample_content', []))
                     for content in sample_content[:3]:
                         st.text(f"  - {content}")
             
@@ -533,7 +529,7 @@ def task3_event_extraction():
             st.markdown('</div>', unsafe_allow_html=True)
 
 def task4_report_generation():
-    st.title("📝 任务四：分析报告生成（流式输出）")
+    st.title("📝 任务四：告警事件分析")
     st.markdown("---")
     
     st.markdown('<div class="section-header">1️⃣ 上传结构化数据</div>', unsafe_allow_html=True)
@@ -582,7 +578,7 @@ def task4_report_generation():
                         progress_bar.progress(10)
                         time.sleep(0.3)
                         
-                        st.session_state.task4_progress.append("## 📊 告警分析报告\n")
+                        st.session_state.task4_progress.append("## 📊 告警事件分析报告\n")
                         st.session_state.task4_progress.append("\n---\n")
                         st.session_state.task4_progress.append("\n### 📈 分析概述\n")
                         st.session_state.task4_progress.append(f"\n- 分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -606,14 +602,14 @@ def task4_report_generation():
                         # st.session_state.task4_progress.append(f"- 降噪率: {noise_reduction:.2f}%\n")
                         # st.session_state.task4_progress.append(f"- 发现事件: {len(denoiser.alert_clusters)} 个\n")
                         #
-                        print("report...",report)
+                        # print("report...",report)
                         # exit()
                         status_text.text("正在生成事件分析...")
                         progress_bar.progress(50)
                         time.sleep(0.3)
                         
                         st.session_state.task4_progress.append("\n---\n")
-                        st.session_state.task4_progress.append("\n### 🎯 事件分析\n")
+                        st.session_state.task4_progress.append("\n### 🎯 告警事件分析\n")
                         alert_clusters_dict = st.session_state.task4_structured_df.head(1).T.to_dict()
                         for idx, cluster in enumerate( alert_clusters_dict):
                             print(cluster)
@@ -626,7 +622,7 @@ def task4_report_generation():
                             st.session_state.task4_progress.append(f"- **首次发生**: {cluster.get('first_time', 'N/A')}\n")
                             st.session_state.task4_progress.append(f"- **最后发生**: {cluster.get('last_time', 'N/A')}\n")
                             
-                            sample_content = cluster.get('sample_content', [])
+                            sample_content = eval((cluster.get('sample_content', [])))
                             if sample_content:
                                 st.session_state.task4_progress.append("\n**示例内容**:\n")
                                 for content in sample_content[:2]:
@@ -636,53 +632,69 @@ def task4_report_generation():
                             status_text.text(f"正在分析事件 {idx + 1}/{len(alert_clusters_dict)}...")
                             time.sleep(0.2)
 
-                        st.session_state.task4_report = "".join(st.session_state.task4_progress)+report
-                        processed_data['alert_report'] = st.session_state.task4_report
-                        
+                        report_text = "".join(st.session_state.task4_progress+report)
+                        st.session_state.task4_report = report_text
+                        processed_data['alert_report'] = report_text
+
                         status_text.text("报告生成完成！")
                         progress_bar.progress(100)
                         time.sleep(0.5)
                         
                         st.session_state.task4_complete = True
                         
-                        st.success(f"✅ 报告生成完成！")
+                        st.success("✅ 报告生成完成！")
                     
                     except Exception as e:
                         st.error(f"❌ 报告生成失败: {str(e)}")
                         import traceback
                         with st.expander("查看错误详情"):
                             st.code(traceback.format_exc())
-    
+
     if st.session_state.task4_complete:
-        st.markdown('<div class="section-header">3️⃣ 报告展示（流式输出）</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">3️⃣ 分析报告</div>', unsafe_allow_html=True)
         
-        report_container = st.empty()
-        
-        report_text = st.session_state.task4_report
-        
-        with st.spinner("正在流式输出报告..."):
-            display_text = ""
-            for char in report_text:
-                display_text += char
-                report_container.markdown(display_text)
-                time.sleep(0.005)
-        
-        st.markdown('<div class="download-section">', unsafe_allow_html=True)
-        st.subheader("💾 下载报告")
-        
-        st.download_button(
-            label="📥 下载完整报告 (Markdown)",
-            data=st.session_state.task4_report,
-            file_name=f"告警分析报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-            mime="text/markdown"
-        )
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        # 从 session_state 中获取报告内容
+        report_text = st.session_state.get('task4_report', '')
+
+        if report_text:
+            st.markdown(report_text, unsafe_allow_html=True)
+            
+            st.markdown('<div class="download-section">', unsafe_allow_html=True)
+            st.subheader("💾 下载报告")
+            st.download_button(
+                label="📥 下载完整报告 (Markdown)",
+                data=report_text,
+                file_name=f"告警事件分析报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("报告内容为空。")
 
 def main():
     init_session_state()
     
     with st.sidebar:
+        st.markdown("""
+        <style>
+            [data-testid="stSidebar"] .st-emotion-cache-10oheav {
+                padding-top: 2rem;
+            }
+            [data-testid="stSidebar"] h1 {
+                font-size: 1.75rem;
+                padding-bottom: 0.5rem;
+            }
+            [data-testid="stSidebar"] h3 {
+                font-size: 1.25rem;
+                padding-top: 1rem;
+                padding-bottom: 0.5rem;
+            }
+            [data-testid="stSidebar"] p {
+                margin-bottom: 0.25rem;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
         st.title("📋 任务菜单")
         st.markdown("---")
         
@@ -703,11 +715,11 @@ def main():
             'task4': 'green' if st.session_state.task4_complete else 'gray',
         }
         
-        st.markdown(f"- 🏠 首页: :blue[当前]" if st.session_state.page == 'home' else "- 🏠 首页")
+        # st.markdown(f"- 🏠 首页: :blue[当前]" if st.session_state.page == 'home' else "- 🏠 首页")
         st.markdown(f"- 📋 日志解析: :{status_colors['task1']}[{'✓ 已完成' if st.session_state.task1_complete else '未完成'}]")
         st.markdown(f"- 🔇 智能降噪: :{status_colors['task2']}[{'✓ 已完成' if st.session_state.task2_complete else '未完成'}]")
         st.markdown(f"- 🎯 事件抽取: :{status_colors['task3']}[{'✓ 已完成' if st.session_state.task3_complete else '未完成'}]")
-        st.markdown(f"- 📝 分析报告: :{status_colors['task4']}[{'✓ 已完成' if st.session_state.task4_complete else '未完成'}]")
+        st.markdown(f"- 📝 告警事件分析报告: :{status_colors['task4']}[{'✓ 已完成' if st.session_state.task4_complete else '未完成'}]")
     
     if st.session_state.page == 'home':
         home_page()

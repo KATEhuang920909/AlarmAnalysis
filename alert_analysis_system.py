@@ -213,7 +213,7 @@ class AlertDenoise:
         return self.alert_clusters
     def llm_alert_validity_check(self, alert_clusters_df, output_file="告警分析报告"):
         self.update_progress("报告生成", 88, "开始生成分析报告")
-        report = ""
+        report = []
         
         if alert_clusters_df.empty:
             self.update_progress("报告生成", 95, "没有可分析的事件，跳过报告生成")
@@ -226,16 +226,24 @@ class AlertDenoise:
             unit = alert_clusters_dict[unit_key]
             cluster_id = unit['cluster_id']
             
-            prompt = f"""请作为SRE专家，分析以下属于同一聚类ID的日志统计信息。以markdown的格式返回分析报告。
+            prompt = f"""请作为SRE专家，分析以下属于同一聚类ID的日志统计信息。
             聚类ID: {cluster_id}
             日志统计信息：{unit}
             请输出分析报告，只包含如下内容：
-            事件ID: {cluster_id}
-            1. 聚类概要：告警类型、日志模板（动态变量用{{}}标注）
-            2. 关键特征：涉及的主要服务、日志级别、核心关键词（多个关键词用逗号分隔）、时间/频率模式、相关ID/参数规律
-            3. 建议与行动：监控指标、告警优化（是否需升降级）、处理建议（正常流程可降级DEBUG，异常流程给出排查步骤）、还需哪些数据确认根因"""
+            #### 聚类概要
+            * 告警类型：
+            * 日志模板（动态变量用{{}}标注）：
+            #### 关键特征
+            * 涉及服务：
+            * 核心关键词：核心关键词（多个关键词用逗号分隔）
+            * 时间/频率模式：
+            * 参数规律：
+            #### 建议与行动
+            * 监控指标：
+            * 处理建议：
+            * 还需哪些数据确认根因："""
             
-            full_content = ""
+            full_content = []
             try:
                 response = client.chat.completions.create(
                     model=LLM_MODEL,
@@ -247,15 +255,16 @@ class AlertDenoise:
                 for chunk in response:
                     content = chunk.choices[0].delta.content
                     if content:
-                        full_content += content
+                        full_content.append(content)
                         print(content, end="", flush=True)
                         self.update_progress("报告流", 90, content)
+                full_content +="\n\n"
             except Exception as e:
                 error_message = f"调用LLM为事件 {cluster_id} 生成报告时出错: {str(e)}"
                 self.update_progress("错误", 90, error_message)
                 full_content = error_message
                 
-            report += full_content + "\n\n"
+            report += full_content
             progress = 88 + int(((i + 1) / num_clusters) * 7)
             self.update_progress("报告生成", progress, f"事件 {cluster_id} 报告生成完毕")
 
