@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.cluster import DBSCAN
 from sentence_transformers import SentenceTransformer
 from zhipuai import ZhipuAI
+import time
 
 LLM_API_KEY = "aaa16e53a2cf92220d4fd3d9282a9fa7.A8zR3KN6eI1uKwZM"
 LLM_MODEL = "glm-4-long"
@@ -128,7 +129,8 @@ class DataPreprocessor:
             if idx % max(1, total_rows // 10) == 0:
                 progress = 20 + int((idx / total_rows) * 20)
                 self.update_progress("日志解析", progress, f"已解析 {idx}/{total_rows} 条日志")
-        
+                time.sleep(1)
+
         result_df = pd.DataFrame(split_result)
         for col in result_df.columns:
             if col in self.df.columns:
@@ -177,7 +179,7 @@ class AlertDenoise:
             content=('content', lambda x: list(dict.fromkeys([i for i in x if pd.notna(i)]))),
             trace_id_list=(trace_id_col, list),
         ).reset_index()
-
+        time.sleep(5)
         self.update_progress("智能降噪", 65, "基础去重完成")
         return duplicate_stats
 

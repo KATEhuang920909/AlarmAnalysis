@@ -368,14 +368,14 @@ def task2_denoising():
                         st.session_state.task2_complete = True
                         
                         noise_reduction = ((len(input_df) - len(denoised_df)) / len(input_df) * 100)
-                        st.success(f"✅ 降噪完成！原始: {len(input_df)} → 降噪后: {len(denoised_df)} → 降噪率: {noise_reduction:.2f}%")
-                    
+
                     except Exception as e:
                         st.error(f"❌ 降噪失败: {str(e)}")
                         import traceback
                         with st.expander("查看错误详情"):
                             st.code(traceback.format_exc())
-    
+    st.success(f"✅ 降噪完成！原始: {len(input_df)} → 降噪后: {len(processed_data['denoised_df'])} → 降噪率: {noise_reduction:.2f}%")
+
     if st.session_state.task2_complete:
         st.markdown('<div class="section-header">3️⃣ 结果展示</div>', unsafe_allow_html=True)
         
