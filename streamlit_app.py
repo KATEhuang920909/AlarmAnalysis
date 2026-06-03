@@ -5,13 +5,12 @@ import time
 from datetime import datetime
 import os
 import sys
-
+import ast
 sys.path.insert(0, os.path.dirname(__file__))
 
 from alert_analysis_system import (
     DataPreprocessor, 
     AlertDenoise, 
-    core_metrics,
     processed_data
 )
 
@@ -547,7 +546,6 @@ def task4_report_generation():
     
     uploaded_file = None
     input_df = None
-    input_clusters = None
     
     if data_source == "上传新文件":
         uploaded_file = st.file_uploader(
@@ -560,7 +558,7 @@ def task4_report_generation():
             st.success("✅ 已加载任务三的数据")
             input_df = pd.DataFrame(st.session_state.task3_clusters)
         else:
-            st.warning("⚠️ 请先完成任务三，或选择其他数据来源")
+            st.error("⚠️ 请先完成任务三，或选择其他数据来源")
     
     if data_source == "上传新文件" and uploaded_file is not None:
         st.success(f"✅ 已选择文件: {uploaded_file.name}")
@@ -573,82 +571,17 @@ def task4_report_generation():
                 with st.spinner("正在生成分析报告..."):
                     try:
                         st.session_state.task4_structured_df = input_df
-                        st.session_state.task4_progress = []
-                        
-                        st.markdown('<div class="section-header">2️⃣ 报告生成进度</div>', unsafe_allow_html=True)
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        status_text.text("正在初始化分析...")
-                        progress_bar.progress(10)
-                        time.sleep(0.3)
-                        
-                        st.session_state.task4_progress.append("## 📊 告警事件分析报告\n")
-                        st.session_state.task4_progress.append("\n---\n")
-                        st.session_state.task4_progress.append("\n### 📈 分析概述\n")
-                        st.session_state.task4_progress.append(f"\n- 分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                        st.session_state.task4_progress.append(f"- 日志总数: {len(input_df)}\n")
-                        st.session_state.task4_progress.append(f"- 事件总数: {len(st.session_state.task3_clusters)}\n")
 
+                        # The denoiser needs the structured data from which clusters were formed.
+                        denoiser = AlertDenoise(st.session_state.task3_structured_df, None)
 
-                        
-                        denoiser = AlertDenoise(input_df, None)
-                        
-                        status_text.text("正在进行告警分析...")
-                        progress_bar.progress(35)
-                        time.sleep(0.3)
-                        # print("st.session_state.task4_structured_df",st.session_state.task4_structured_df)
-                        # exit()
-                        report= denoiser.llm_alert_validity_check(st.session_state.task4_structured_df.head(1))
-                        
-                        # st.session_state.task4_clusters = denoiser.alert_clusters
-                        # st.session_state.task4_progress.append(f"- 降噪后: {len(denoised_df)}\n")
-                        # noise_reduction = ((len(input_df) - len(denoised_df)) / len(input_df) * 100)
-                        # st.session_state.task4_progress.append(f"- 降噪率: {noise_reduction:.2f}%\n")
-                        # st.session_state.task4_progress.append(f"- 发现事件: {len(denoiser.alert_clusters)} 个\n")
-                        #
-                        # print("report...",report)
-                        # exit()
-                        status_text.text("正在生成事件分析...")
-                        progress_bar.progress(50)
-                        time.sleep(0.3)
-                        
-                        st.session_state.task4_progress.append("\n---\n")
-                        st.session_state.task4_progress.append("\n### 🎯 告警事件分析\n")
-                        alert_clusters_dict = st.session_state.task4_structured_df.head(1).T.to_dict()
-                        for idx, cluster in enumerate( alert_clusters_dict):
-                            print(cluster)
-                            cluster= alert_clusters_dict[cluster]
-                            # exit()
-                            st.session_state.task4_progress.append(f"\n#### 事件 {cluster.get('cluster_id', idx)}\n")
-                            st.session_state.task4_progress.append(f"- **服务**: {cluster.get('service', 'N/A')}\n")
-                            st.session_state.task4_progress.append(f"- **级别**: {cluster.get('level', 'N/A')}\n")
-                            st.session_state.task4_progress.append(f"- **告警数量**: {cluster.get('alert_count', 0)}\n")
-                            st.session_state.task4_progress.append(f"- **首次发生**: {cluster.get('first_time', 'N/A')}\n")
-                            st.session_state.task4_progress.append(f"- **最后发生**: {cluster.get('last_time', 'N/A')}\n")
-                            
-                            sample_content = eval((cluster.get('sample_content', [])))
-                            if sample_content:
-                                st.session_state.task4_progress.append("\n**示例内容**:\n")
-                                for content in sample_content[:2]:
-                                    st.session_state.task4_progress.append(f"- {content}\n")
-                            
-                            progress_bar.progress(50 + (idx + 1) * (40 // len(alert_clusters_dict)))
-                            status_text.text(f"正在分析事件 {idx + 1}/{len(alert_clusters_dict)}...")
-                            time.sleep(0.2)
+                        # The report generator function takes the clusters DataFrame.
+                        report_generator = denoiser.llm_alert_validity_check(input_df)
 
-                        report_text = "".join(st.session_state.task4_progress+report)
-                        st.session_state.task4_report = report_text
-                        processed_data['alert_report'] = report_text
-
-                        status_text.text("报告生成完成！")
-                        progress_bar.progress(100)
-                        time.sleep(0.5)
-                        
+                        st.session_state.task4_report_generator = report_generator
                         st.session_state.task4_complete = True
-                        
-                        st.success("✅ 报告生成完成！")
-                    
+                        st.success("✅ 报告生成任务已启动！")
+
                     except Exception as e:
                         st.error(f"❌ 报告生成失败: {str(e)}")
                         import traceback
@@ -658,22 +591,36 @@ def task4_report_generation():
     if st.session_state.task4_complete:
         st.markdown('<div class="section-header">3️⃣ 分析报告</div>', unsafe_allow_html=True)
         
-        # 从 session_state 中获取报告内容
-        report_text = st.session_state.get('task4_report', '')
-
-        if report_text:
-            st.markdown(report_text, unsafe_allow_html=True)
+        if 'task4_report_generator' in st.session_state and st.session_state.task4_report_generator is not None:
+            report_placeholder = st.empty()
             
+            # Stream and collect the report
+            report_chunks = []
+            def stream_and_collect():
+                for chunk in st.session_state.task4_report_generator:
+                    report_chunks.append(str(chunk))
+                    yield chunk
+            
+            with report_placeholder.container():
+                st.write_stream(stream_and_collect())
+
+            # After streaming, save the full report and clear the generator
+            final_report = "".join(report_chunks)
+            st.session_state.task4_report = final_report
+            st.session_state.task4_report_generator = None
+
+        # Display download button if the full report is available
+        if st.session_state.get('task4_report'):
             st.markdown('<div class="download-section">', unsafe_allow_html=True)
             st.subheader("💾 下载报告")
             st.download_button(
                 label="📥 下载完整报告 (Markdown)",
-                data=report_text,
+                data=st.session_state.task4_report,
                 file_name=f"告警事件分析报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
                 mime="text/markdown"
             )
             st.markdown('</div>', unsafe_allow_html=True)
-        else:
+        elif 'task4_report_generator' not in st.session_state:
             st.info("报告内容为空。")
 
 def main():
@@ -707,7 +654,7 @@ def main():
         st.button("📋 任务一：日志解析", on_click=set_page, args=('task1',), use_container_width=True)
         st.button("🔇 任务二：智能降噪", on_click=set_page, args=('task2',), use_container_width=True)
         st.button("🎯 任务三：事件抽取", on_click=set_page, args=('task3',), use_container_width=True)
-        st.button("📝 任务四：分析报告", on_click=set_page, args=('task4',), use_container_width=True)
+        st.button("📝 任务四：告警分析", on_click=set_page, args=('task4',), use_container_width=True)
         
         st.markdown("---")
         st.markdown("### 📊 任务状态")

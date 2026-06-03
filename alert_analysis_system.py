@@ -184,8 +184,8 @@ class AlertDenoise:
         return duplicate_stats
 
     def semantic_clustering(self):
-        self.update_progress("事件抽取", 70, "开始语义聚类")
-        model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.update_progress("事件抽取", 70, "开始语义分析")
+        model = SentenceTransformer('../model/all-MiniLM-L6-v2',local_files_only=True)
         # 确保输入是字符串列表，而不是列表的列表
         sentences = [c[0] if isinstance(c, list) and c else "" for c in self.df['content']]
         self.update_progress("事件抽取", 72, "正在编码日志内容")
@@ -211,15 +211,15 @@ class AlertDenoise:
                 "track_id_sample": cluster_data['trace_id_list'].iloc[0][0] if 'trace_id_list' in cluster_data.columns and len(cluster_data['trace_id_list'].iloc[0]) > 0 else None,
             })
 
-        self.update_progress("事件抽取", 85, f"聚类完成，发现 {len(self.alert_clusters)} 个事件")
+        self.update_progress("事件抽取", 85, f"抽取完成，发现 {len(self.alert_clusters)} 个事件")
         return self.alert_clusters
     def llm_alert_validity_check(self, alert_clusters_df, output_file="告警分析报告"):
         self.update_progress("报告生成", 88, "开始生成分析报告")
-        report = []
         
         if alert_clusters_df.empty:
             self.update_progress("报告生成", 95, "没有可分析的事件，跳过报告生成")
-            return ""
+            yield ""
+            return
 
         alert_clusters_dict = alert_clusters_df.T.to_dict()
         num_clusters = len(alert_clusters_dict)
@@ -228,25 +228,25 @@ class AlertDenoise:
             unit = alert_clusters_dict[unit_key]
             cluster_id = unit['cluster_id']
             
-            prompt = f"""请作为SRE专家，分析以下属于同一聚类ID的日志统计信息。
-            聚类ID: {cluster_id}
+            prompt = f"""请作为SRE专家，分析以下属于同一事件ID的日志统计信息。
+            事件ID: {cluster_id}
             日志统计信息：{unit}
             请输出分析报告，只包含如下内容：
-            #### 聚类概要
+            ##### 事件概要
             * 告警类型：
             * 日志模板（动态变量用{{}}标注）：
-            #### 关键特征
+            ##### 关键特征
             * 涉及服务：
             * 核心关键词：核心关键词（多个关键词用逗号分隔）
             * 时间/频率模式：
             * 参数规律：
-            #### 建议与行动
+            ##### 建议与行动
             * 监控指标：
             * 处理建议：
             * 还需哪些数据确认根因："""
             
-            full_content = []
             try:
+                yield f"####事件ID: {cluster_id}"
                 response = client.chat.completions.create(
                     model=LLM_MODEL,
                     messages=[{"role": "user", "content": prompt}],
@@ -257,21 +257,18 @@ class AlertDenoise:
                 for chunk in response:
                     content = chunk.choices[0].delta.content
                     if content:
-                        full_content.append(content)
-                        print(content, end="", flush=True)
+                        yield content
                         self.update_progress("报告流", 90, content)
-                full_content +="\n\n"
+                yield "\n\n"
             except Exception as e:
                 error_message = f"调用LLM为事件 {cluster_id} 生成报告时出错: {str(e)}"
                 self.update_progress("错误", 90, error_message)
-                full_content = error_message
+                yield error_message
                 
-            report += full_content
             progress = 88 + int(((i + 1) / num_clusters) * 7)
             self.update_progress("报告生成", progress, f"事件 {cluster_id} 报告生成完毕")
 
         self.update_progress("报告生成", 95, "报告生成完成")
-        return report
 
     def process(self):
         self.update_progress("智能降噪", 52, "开始告警智能降噪")
